@@ -1,0 +1,23 @@
+{
+  "name": "safeswap",
+  "version": "1.0.0",
+  "description": "SafeSwap - Local marketplace for baby/kids gear with built-in safety features",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
+  "scripts": {
+    "client": "npm run dev --workspace=client",
+    "server": "npm run dev --workspace=server",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "install:all": "npm install && npm install --workspaces"
+  },
+  "keywords": ["marketplace", "baby-gear", "safety", "local"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
