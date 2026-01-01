@@ -7,11 +7,13 @@ export const getListings = async (req, res) => {
 
     let query = `
       SELECT l.*,
-             u.phone as seller_phone,
-             u.parent_badge as seller_parent_badge
+             u.username as seller_username,
+             u.is_verified_parent as seller_is_verified_parent,
+             ARRAY_AGG(li.image_url ORDER BY li.display_order) FILTER (WHERE li.image_url IS NOT NULL) as images
       FROM listings l
       JOIN users u ON l.user_id = u.id
-      WHERE l.status = 'active'
+      LEFT JOIN listing_images li ON l.id = li.listing_id
+      WHERE l.is_sold = FALSE
     `;
 
     const queryParams = [];
@@ -35,7 +37,9 @@ export const getListings = async (req, res) => {
       paramIndex++;
     }
 
-    query += ` ORDER BY l.featured DESC, l.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    query += ` GROUP BY l.id, u.username, u.is_verified_parent
+               ORDER BY l.featured DESC, l.created_at DESC
+               LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     queryParams.push(limit, offset);
 
     const result = await pool.query(query, queryParams);

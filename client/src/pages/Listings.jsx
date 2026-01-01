@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
-import { MapPin, Clock } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { MapPin, CheckCircle, Shield } from 'lucide-react';
 
 const Listings = () => {
   const [listings, setListings] = useState([]);
@@ -29,23 +28,26 @@ const Listings = () => {
     }
   };
 
+  // MVP Spec: Age ranges (exact format)
   const ageRanges = [
-    { value: '0-6', label: '0-6 months' },
-    { value: '6-12', label: '6-12 months' },
-    { value: '12-24', label: '1-2 years' },
-    { value: '24-48', label: '2-4 years' },
-    { value: '48+', label: '4+ years' },
+    '0-6mo',
+    '6-12mo',
+    '12-18mo',
+    '18-24mo',
+    '2-3yr',
+    '3-5yr',
+    '5+',
   ];
 
+  // MVP Spec: Categories
   const categories = [
-    'Strollers',
-    'Car Seats',
-    'Cribs & Bassinets',
-    'Toys',
-    'Clothing',
-    'Feeding',
-    'Books',
-    'Other',
+    { value: 'gear', label: 'Gear' },
+    { value: 'clothing', label: 'Clothing' },
+    { value: 'toys', label: 'Toys' },
+    { value: 'furniture', label: 'Furniture' },
+    { value: 'feeding', label: 'Feeding' },
+    { value: 'safety', label: 'Safety' },
+    { value: 'other', label: 'Other' },
   ];
 
   return (
@@ -58,62 +60,75 @@ const Listings = () => {
           </Link>
         </div>
 
-        {/* Filters */}
-        <div className="card mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search
-              </label>
-              <input
-                type="text"
-                placeholder="Search items..."
-                value={filters.search}
-                onChange={(e) =>
-                  setFilters({ ...filters, search: e.target.value })
-                }
-                className="input-field"
-              />
-            </div>
+        {/* Search Bar */}
+        <div className="card mb-6">
+          <input
+            type="text"
+            placeholder="Search for baby gear, toys, clothing..."
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            className="input-field w-full text-lg"
+          />
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Age Range
-              </label>
-              <select
-                value={filters.ageRange}
-                onChange={(e) =>
-                  setFilters({ ...filters, ageRange: e.target.value })
-                }
-                className="input-field"
+        {/* MVP Spec: Quick Age Filter Buttons */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Age Range</h3>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setFilters({ ...filters, ageRange: '' })}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                filters.ageRange === ''
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-white text-gray-700 border border-gray-300 hover:border-primary-600'
+              }`}
+            >
+              All Ages
+            </button>
+            {ageRanges.map((range) => (
+              <button
+                key={range}
+                onClick={() => setFilters({ ...filters, ageRange: range })}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  filters.ageRange === range
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:border-primary-600'
+                }`}
               >
-                <option value="">All Ages</option>
-                {ageRanges.map((range) => (
-                  <option key={range.value} value={range.value}>
-                    {range.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+                {range}
+              </button>
+            ))}
+          </div>
+        </div>
 
+        {/* Category Filter */}
+        <div className="card mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Category
               </label>
               <select
                 value={filters.category}
-                onChange={(e) =>
-                  setFilters({ ...filters, category: e.target.value })
-                }
+                onChange={(e) => setFilters({ ...filters, category: e.target.value })}
                 className="input-field"
               >
                 <option value="">All Categories</option>
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
+                {categories.map((cat) => (
+                  <option key={cat.value} value={cat.value}>
+                    {cat.label}
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="flex items-end">
+              <button
+                onClick={() => setFilters({ ageRange: '', category: '', search: '' })}
+                className="btn-secondary w-full"
+              >
+                Clear All Filters
+              </button>
             </div>
           </div>
         </div>
@@ -131,9 +146,10 @@ const Listings = () => {
               <Link
                 key={listing.id}
                 to={`/listings/${listing.id}`}
-                className="card hover:shadow-lg transition-shadow"
+                className="card hover:shadow-lg transition-shadow relative"
               >
-                <div className="aspect-w-16 aspect-h-9 bg-gray-200 rounded-lg mb-4">
+                {/* Primary Photo */}
+                <div className="relative mb-4">
                   {listing.images?.[0] ? (
                     <img
                       src={listing.images[0]}
@@ -145,42 +161,60 @@ const Listings = () => {
                       <span className="text-gray-400">No image</span>
                     </div>
                   )}
+
+                  {/* MVP Spec: Safety Verified Badge */}
+                  {listing.safety_checked && !listing.has_recalls && (
+                    <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-full flex items-center text-xs font-semibold">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Safety Verified ✓
+                    </div>
+                  )}
                 </div>
 
-                <h3 className="font-semibold text-lg mb-2">{listing.title}</h3>
-                <p className="text-2xl font-bold text-primary-600 mb-2">
-                  ${listing.price}
-                </p>
+                {/* Title */}
+                <h3 className="font-semibold text-lg mb-2 line-clamp-2">{listing.title}</h3>
 
-                <div className="flex items-center text-sm text-gray-600 mb-1">
-                  <MapPin className="h-4 w-4 mr-1" />
-                  {listing.location}
+                {/* Price with % off retail if provided */}
+                <div className="mb-3">
+                  <p className="text-2xl font-bold text-primary-600">
+                    ${listing.price}
+                  </p>
+                  {listing.original_price && (
+                    <p className="text-sm text-gray-500">
+                      <span className="line-through">${listing.original_price}</span>
+                      {' '}
+                      <span className="text-green-600 font-semibold">
+                        {Math.round((1 - listing.price / listing.original_price) * 100)}% off
+                      </span>
+                    </p>
+                  )}
                 </div>
 
-                <div className="flex items-center text-sm text-gray-600">
-                  <Clock className="h-4 w-4 mr-1" />
-                  {formatDistanceToNow(new Date(listing.createdAt), {
-                    addSuffix: true,
-                  })}
-                </div>
-
-                {listing.safetyStatus && (
-                  <div className="mt-3">
-                    <span
-                      className={`inline-block px-2 py-1 text-xs font-semibold rounded ${
-                        listing.safetyStatus === 'safe'
-                          ? 'bg-green-100 text-green-800'
-                          : listing.safetyStatus === 'warning'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {listing.safetyStatus === 'safe'
-                        ? 'No Recalls'
-                        : listing.safetyStatus === 'warning'
-                        ? 'Check Recalls'
-                        : 'Safety Alert'}
+                {/* Age Range & Condition */}
+                <div className="flex gap-2 mb-3">
+                  {listing.age_range && (
+                    <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
+                      {listing.age_range}
                     </span>
+                  )}
+                  {listing.condition && (
+                    <span className="inline-block px-2 py-1 bg-gray-100 text-gray-800 text-xs font-medium rounded">
+                      {listing.condition}
+                    </span>
+                  )}
+                </div>
+
+                {/* Distance/Location (ZIP for now) */}
+                <div className="flex items-center text-sm text-gray-600 mb-2">
+                  <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
+                  <span>{listing.location_zip || 'Location not specified'}</span>
+                </div>
+
+                {/* MVP Spec: Verified Parent Badge */}
+                {listing.seller_is_verified_parent && (
+                  <div className="flex items-center text-sm text-primary-600 font-medium">
+                    <Shield className="h-4 w-4 mr-1" />
+                    Verified Parent
                   </div>
                 )}
               </Link>
