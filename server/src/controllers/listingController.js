@@ -80,43 +80,58 @@ export const getListing = async (req, res) => {
 };
 
 export const createListing = async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const {
       title,
       description,
       price,
+      originalPrice,
       category,
       ageRange,
       condition,
       brand,
-      model,
+      isSmokeFree,
+      isPetFree,
+      locationZip,
       images,
-      location,
-      latitude,
-      longitude,
     } = req.body;
 
-    if (!title || !price || !category) {
+    // MVP Spec: Required fields
+    if (!title || !price || !category || !ageRange || !condition || !locationZip) {
       return res.status(400).json({
-        message: 'Title, price, and category are required'
+        message: 'Title, price, category, age range, condition, and ZIP code are required'
       });
     }
 
-    // Check for safety recalls if brand and model are provided
-    let safetyStatus = 'unknown';
-    let safetyNotes = null;
-
-    if (brand && model) {
-      const recallCheck = await checkSafetyRecall(brand, model, category);
-      safetyStatus = recallCheck.status;
-      safetyNotes = recallCheck.notes;
+    // MVP Spec: 2-6 photos required
+    if (!images || images.length < 2 || images.length > 6) {
+      return res.status(400).json({
+        message: 'Please upload between 2 and 6 photos'
+      });
     }
 
-    const result = await pool.query(
+    // Check for safety recalls if brand is provided
+    let safetyChecked = false;
+    let hasRecalls = false;
+    let recallDetails = null;
+
+    if (brand) {
+      const recallCheck = await checkSafetyRecall(brand, null, category);
+      safetyChecked = true;
+      hasRecalls = recallCheck.status === 'recalled';
+      recallDetails = recallCheck.notes;
+    }
+
+    await client.query('BEGIN');
+
+    // Insert listing
+    const result = await client.query(
       `INSERT INTO listings (
-        user_id, title, description, price, category, age_range,
-        condition, brand, model, images, location, latitude, longitude,
-        safety_status, safety_notes
+        user_id, title, description, price, original_price, category, age_range,
+        condition, brand, is_smoke_free, is_pet_free, location_zip,
+        safety_checked, has_recalls, recall_details
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *`,
       [
@@ -124,24 +139,42 @@ export const createListing = async (req, res) => {
         title,
         description,
         price,
+        originalPrice,
         category,
         ageRange,
         condition,
         brand,
-        model,
-        images || [],
-        location,
-        latitude,
-        longitude,
-        safetyStatus,
-        safetyNotes,
+        isSmokeFree,
+        isPetFree,
+        locationZip,
+        safetyChecked,
+        hasRecalls,
+        recallDetails,
       ]
     );
 
-    res.status(201).json(result.rows[0]);
+    const listing = result.rows[0];
+
+    // Insert images into listing_images table
+    for (let i = 0; i < images.length; i++) {
+      await client.query(
+        'INSERT INTO listing_images (listing_id, image_url, display_order) VALUES ($1, $2, $3)',
+        [listing.id, images[i], i]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // Return listing with images array for compatibility
+    listing.images = images;
+
+    res.status(201).json(listing);
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Create listing error:', error);
     res.status(500).json({ message: 'Failed to create listing' });
+  } finally {
+    client.release();
   }
 };
 
