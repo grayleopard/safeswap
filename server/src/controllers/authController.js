@@ -78,22 +78,22 @@ export const verifyCode = async (req, res) => {
 
     // Find or create user
     let userResult = await pool.query(
-      'SELECT * FROM users WHERE phone = $1',
+      'SELECT * FROM users WHERE phone_number = $1',
       [phone]
     );
 
     let user;
     if (userResult.rows.length === 0) {
-      // Create new user
+      // Create new user (minimal info for now)
       const newUser = await pool.query(
-        'INSERT INTO users (phone, verified) VALUES ($1, $2) RETURNING *',
+        'INSERT INTO users (phone_number, verified) VALUES ($1, $2) RETURNING *',
         [phone, true]
       );
       user = newUser.rows[0];
     } else {
       // Update existing user
       const updatedUser = await pool.query(
-        'UPDATE users SET verified = TRUE, updated_at = NOW() WHERE phone = $1 RETURNING *',
+        'UPDATE users SET verified = TRUE, updated_at = NOW() WHERE phone_number = $1 RETURNING *',
         [phone]
       );
       user = updatedUser.rows[0];
@@ -101,7 +101,7 @@ export const verifyCode = async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user.id, phone: user.phone },
+      { userId: user.id, phone: user.phone_number },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRE || '7d' }
     );
@@ -110,9 +110,11 @@ export const verifyCode = async (req, res) => {
       token,
       user: {
         id: user.id,
-        phone: user.phone,
+        phone: user.phone_number,
+        username: user.username,
+        name: user.name,
         verified: user.verified,
-        parentBadge: user.parent_badge,
+        isVerifiedParent: user.is_verified_parent,
       },
     });
   } catch (error) {
@@ -121,10 +123,91 @@ export const verifyCode = async (req, res) => {
   }
 };
 
+export const completeProfile = async (req, res) => {
+  try {
+    const { phone, code, username, name, locationZip } = req.body;
+
+    // Validate required fields
+    if (!phone || !code || !username || !name || !locationZip) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Validate username format (3-50 chars, alphanumeric and underscore)
+    if (!/^[a-zA-Z0-9_]{3,50}$/.test(username)) {
+      return res.status(400).json({
+        message: 'Username must be 3-50 characters and contain only letters, numbers, and underscores'
+      });
+    }
+
+    // Validate ZIP code (5 digits)
+    if (!/^[0-9]{5}$/.test(locationZip)) {
+      return res.status(400).json({ message: 'ZIP code must be 5 digits' });
+    }
+
+    // Verify the code is still valid
+    const codeResult = await pool.query(
+      'SELECT * FROM verification_codes WHERE phone = $1 AND code = $2 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1',
+      [phone, code]
+    );
+
+    if (codeResult.rows.length === 0) {
+      return res.status(400).json({ message: 'Invalid or expired verification code' });
+    }
+
+    // Check if username is already taken
+    const usernameCheck = await pool.query(
+      'SELECT id FROM users WHERE username = $1',
+      [username]
+    );
+
+    if (usernameCheck.rows.length > 0) {
+      return res.status(400).json({ message: 'Username already taken' });
+    }
+
+    // Update user with profile info
+    const result = await pool.query(
+      `UPDATE users
+       SET username = $1, name = $2, location_zip = $3, updated_at = NOW()
+       WHERE phone_number = $4
+       RETURNING *`,
+      [username, name, locationZip, phone]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const user = result.rows[0];
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id, phone: user.phone_number },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRE || '7d' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        phone: user.phone_number,
+        username: user.username,
+        name: user.name,
+        locationZip: user.location_zip,
+        verified: user.verified,
+        isVerifiedParent: user.is_verified_parent,
+      },
+    });
+  } catch (error) {
+    console.error('Complete profile error:', error);
+    res.status(500).json({ message: 'Failed to complete profile' });
+  }
+};
+
 export const getMe = async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, phone, verified, parent_badge, created_at FROM users WHERE id = $1',
+      'SELECT id, phone_number, username, name, location_zip, verified, is_verified_parent, created_at FROM users WHERE id = $1',
       [req.user.id]
     );
 
@@ -135,9 +218,12 @@ export const getMe = async (req, res) => {
     const user = result.rows[0];
     res.json({
       id: user.id,
-      phone: user.phone,
+      phone: user.phone_number,
+      username: user.username,
+      name: user.name,
+      locationZip: user.location_zip,
       verified: user.verified,
-      parentBadge: user.parent_badge,
+      isVerifiedParent: user.is_verified_parent,
       createdAt: user.created_at,
     });
   } catch (error) {
